@@ -40,6 +40,20 @@ var defaultRules = []lint.Rule{
 }
 
 var allRules = append([]lint.Rule{
+	&rule.UnCheckedParamRule{},
+	&rule.BlackImportRule{},
+	&rule.GlobalVariableRule{},
+	&rule.RangeOverMapRule{},
+	&rule.GoRoutineRule{},
+	&rule.PointerRule{},
+	&rule.PhantomReadRule{},
+	&rule.ReadAfterWriteRule{},
+	&rule.InvokeChaincodeRule{},
+	&rule.ArgPrivacyLeakageRule{},
+	&rule.RetPrivacyLeakageRule{},
+	&rule.BrPrivacyLeakageRule{},
+	&rule.MathOverflowRule{},
+	&rule.ConversionOverflowRule{},
 	&rule.ArgumentsLimitRule{},
 	&rule.CyclomaticRule{},
 	&rule.FileHeaderRule{},
