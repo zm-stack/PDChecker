@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"strings"
 
@@ -18,7 +17,7 @@ type lintRangeOverMap struct {
 
 // Name returns the rule name.
 func (r *RangeOverMapRule) Name() string {
-	return "chaincode-range-over-map"
+	return "chaincode-range-map"
 }
 
 // Apply applies the rule to given file.
@@ -42,8 +41,8 @@ func (w lintRangeOverMap) Visit(node ast.Node) ast.Visitor {
 		if rangeObj, ok := w.file.Pkg.TypesInfo().Types[node.X]; ok {
 			if strings.Contains(rangeObj.Type.String(), "map") {
 				w.onFailure(lint.Failure{
-					Failure:    fmt.Sprintf("Range over map returns pair randomly. Please ensure it does not result in inconsistent result."),
-					RuleName:   "chaincode-range-over-map",
+					Failure:    "Range over map returns pair randomly. Please ensure it does not result in inconsistent result.",
+					RuleName:   "chaincode-range-map",
 					Category:   "chaincode",
 					Node:       node,
 					Confidence: 1.0,

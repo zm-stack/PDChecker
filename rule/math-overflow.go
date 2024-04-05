@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -56,7 +55,7 @@ func (w lintMathOverflow) Visit(node ast.Node) ast.Visitor {
 			default:
 				if isIntType(w.file, n.X) {
 					w.onFailure(lint.Failure{
-						Failure:    fmt.Sprintf("NegateInt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked."),
+						Failure:    "NegateInt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked.",
 						RuleName:   "math-overflow",
 						Category:   "logic",
 						Node:       n,
@@ -69,7 +68,7 @@ func (w lintMathOverflow) Visit(node ast.Node) ast.Visitor {
 	case *ast.BinaryExpr:
 		if isIntType(w.file, n) {
 			w.onFailure(lint.Failure{
-				Failure:    fmt.Sprintf("BinaryExpr overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked."),
+				Failure:    "BinaryExpr overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked.",
 				RuleName:   "math-overflow",
 				Category:   "logic",
 				Node:       n,
@@ -80,7 +79,7 @@ func (w lintMathOverflow) Visit(node ast.Node) ast.Visitor {
 	case *ast.ParenExpr:
 		if isIntType(w.file, n.X) {
 			w.onFailure(lint.Failure{
-				Failure:    fmt.Sprintf("ParenExpr overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked."),
+				Failure:    "ParenExpr overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked.",
 				RuleName:   "math-overflow",
 				Category:   "logic",
 				Node:       n,
@@ -98,7 +97,7 @@ func (w lintMathOverflow) Visit(node ast.Node) ast.Visitor {
 			}
 			if flag {
 				w.onFailure(lint.Failure{
-					Failure:    fmt.Sprintf("IncDecStmt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked."),
+					Failure:    "IncDecStmt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked.",
 					RuleName:   "math-overflow",
 					Category:   "logic",
 					Node:       n,
@@ -111,7 +110,7 @@ func (w lintMathOverflow) Visit(node ast.Node) ast.Visitor {
 		if riskOperator(n.Tok) {
 			if isIntType(w.file, n.Lhs[0]) {
 				w.onFailure(lint.Failure{
-					Failure:    fmt.Sprintf("AssignStmt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked."),
+					Failure:    "AssignStmt overflow detected. Please use functions with overflow check.\n https://pkg.go.dev/github.com/bytom/bytom/math/checked.",
 					RuleName:   "math-overflow",
 					Category:   "logic",
 					Node:       n,

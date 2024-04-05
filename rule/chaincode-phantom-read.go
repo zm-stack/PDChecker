@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"strings"
 
@@ -26,7 +25,7 @@ func (i *PhantomReadRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failur
 				for _, fname := range blacklistedQuerys {
 					if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
 						failure := lint.Failure{
-							Failure:    fmt.Sprintf("This function does not perform phantom read checks. It is not recommended to use the results for state change."),
+							Failure:    "This function does not perform phantom read checks. It is not recommended to use the results for state change.",
 							RuleName:   "chaincode-phandom-read",
 							Category:   "chaincode",
 							Node:       callExpr,

@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/mgechev/revive/lint"
@@ -12,7 +11,7 @@ type ArgPrivacyLeakageRule struct{}
 
 // Name returns the rule name.
 func (i *ArgPrivacyLeakageRule) Name() string {
-	return "chaincode-privacy-leakage-in-arg"
+	return "chaincode-privacy-arg"
 }
 
 // Apply applies the rule to given file.
@@ -31,8 +30,8 @@ func (i *ArgPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 						if selectorExpr.Sel.Name == "PutPrivateData" {
 							if !getTransientCalled {
 								failure := lint.Failure{
-									Failure:    fmt.Sprintf("Privacy leakage in arguments. The private data should be passed via GetTransient."),
-									RuleName:   "chaincode-privacy-leakage-in-arg",
+									Failure:    "Privacy leakage in arguments. The private data should be passed via GetTransient.",
+									RuleName:   "chaincode-privacy-arg",
 									Category:   "chaincode",
 									Node:       callExpr,
 									Confidence: 1.0,

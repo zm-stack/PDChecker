@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"go/token"
 
@@ -24,7 +23,7 @@ func (p *PointerRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 		if expr, ok := n.(*ast.UnaryExpr); ok {
 			if expr.Op == token.AND {
 				failure := lint.Failure{
-					Failure:    fmt.Sprintf("& detected. The address is random, which may lead to consensus errors."),
+					Failure:    "& detected. The address is random, which may lead to consensus errors.",
 					RuleName:   "chaincode-pointer",
 					Category:   "chaincode",
 					Node:       expr,
@@ -42,7 +41,7 @@ func (p *PointerRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 				ast.Inspect(funcDecl.Type.Results, func(n ast.Node) bool {
 					if expr, ok := n.(*ast.StarExpr); ok {
 						failure := lint.Failure{
-							Failure:    fmt.Sprintf("* detected in return value. Pointer is not recommended in chaincode if not necessary."),
+							Failure:    "* detected in return value. Pointer is not recommended in chaincode if not necessary.",
 							RuleName:   "chaincode-pointer",
 							Category:   "chaincode",
 							Node:       expr,
@@ -56,7 +55,7 @@ func (p *PointerRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 			ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 				if expr, ok := n.(*ast.StarExpr); ok {
 					failure := lint.Failure{
-						Failure:    fmt.Sprintf("* detected. Pointer is not recommended in chaincode if not necessary."),
+						Failure:    "* detected. Pointer is not recommended in chaincode if not necessary.",
 						RuleName:   "chaincode-pointer",
 						Category:   "chaincode",
 						Node:       expr,
@@ -70,7 +69,7 @@ func (p *PointerRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 		} else {
 			if expr, ok := n.(*ast.StarExpr); ok {
 				failure := lint.Failure{
-					Failure:    fmt.Sprintf("* detected. Pointer is not recommended in chaincode if not necessary."),
+					Failure:    "* detected. Pointer is not recommended in chaincode if not necessary.",
 					RuleName:   "chaincode-pointer",
 					Category:   "chaincode",
 					Node:       expr,

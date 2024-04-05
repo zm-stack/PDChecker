@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"strings"
 
@@ -13,7 +12,7 @@ type ReadAfterWriteRule struct{}
 
 // Name returns the rule name.
 func (i *ReadAfterWriteRule) Name() string {
-	return "chaincode-read-after-write"
+	return "chaincode-read-write"
 }
 
 // Apply applies the rule to given file.
@@ -53,8 +52,8 @@ func (i *ReadAfterWriteRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fai
 								for _, key := range writeKeys {
 									if readKey != "" && strings.Compare(key, readKey) == 0 {
 										failure := lint.Failure{
-											Failure:    fmt.Sprintf("Read after write detected. The read value is outdated."),
-											RuleName:   "chaincode-read-after-write",
+											Failure:    "Read after write detected. The read value is outdated.",
+											RuleName:   "chaincode-read-write",
 											Category:   "chaincode",
 											Node:       callExpr,
 											Confidence: 1.0,
@@ -103,8 +102,8 @@ func (i *ReadAfterWriteRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fai
 								for _, key := range writeprivateKeys {
 									if strings.Compare(key, readPrivateCollection+readPrivateKey) == 0 {
 										failure := lint.Failure{
-											Failure:    fmt.Sprintf("Read after write detected. The read value is outdated."),
-											RuleName:   "chaincode-read-after-write",
+											Failure:    "Read after write detected. The read value is outdated.",
+											RuleName:   "chaincode-read-write",
 											Category:   "chaincode",
 											Node:       callExpr,
 											Confidence: 1.0,

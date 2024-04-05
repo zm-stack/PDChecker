@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/mgechev/revive/lint"
@@ -23,7 +22,7 @@ func (i *InvokeChaincodeRule) Apply(file *lint.File, _ lint.Arguments) []lint.Fa
 			if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
 				if selectorExpr.Sel.Name == "InvokeChaincode" {
 					failure := lint.Failure{
-						Failure:    fmt.Sprintf("Chaincode invocation found. Do not attempt to change state in the invoked chaincode of a different channel."),
+						Failure:    "Chaincode invocation found. Do not attempt to change state in the invoked chaincode of a different channel.",
 						RuleName:   "chaincode-cross-channel",
 						Category:   "chaincode",
 						Node:       callExpr,

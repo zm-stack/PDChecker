@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/mgechev/revive/lint"
@@ -50,7 +49,7 @@ func (w lintConversionOverflow) Visit(node ast.Node) ast.Visitor {
 					if convType == argType {
 						if convSize < argSize {
 							w.onFailure(lint.Failure{
-								Failure:    fmt.Sprintf("Converting a large integer to a small integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast."),
+								Failure:    "Converting a large integer to a small integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast.",
 								RuleName:   "conversion-overflow",
 								Category:   "logic",
 								Node:       n,
@@ -59,7 +58,7 @@ func (w lintConversionOverflow) Visit(node ast.Node) ast.Visitor {
 						}
 					} else if convType == 0 && argType == 1 {
 						w.onFailure(lint.Failure{
-							Failure:    fmt.Sprintf("Converting a signed integer to an unsigned integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast."),
+							Failure:    "Converting a signed integer to an unsigned integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast.",
 							RuleName:   "conversion-overflow",
 							Category:   "logic",
 							Node:       n,
@@ -68,7 +67,7 @@ func (w lintConversionOverflow) Visit(node ast.Node) ast.Visitor {
 					} else if convType == 1 && argType == 0 {
 						if convSize < 2*argSize {
 							w.onFailure(lint.Failure{
-								Failure:    fmt.Sprintf("Converting a unsigned integer to a small signed integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast."),
+								Failure:    "Converting a unsigned integer to a small signed integer. Please use functions with overflow check. \n github.com/lunemec/as or github.com/rung/go-safecast.",
 								RuleName:   "conversion-overflow",
 								Category:   "logic",
 								Node:       n,

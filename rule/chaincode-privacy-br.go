@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 	"strings"
 
@@ -14,16 +13,17 @@ type BrPrivacyLeakageRule struct {
 
 // Name returns the rule name.
 func (i *BrPrivacyLeakageRule) Name() string {
-	return "chaincode-privacy-leakage-in-br"
+	return "chaincode-privacy-br"
 }
 
 // Apply applies the rule to given file.
 func (i *BrPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 	var failures []lint.Failure
+	var privateQuerys = []string{"GetTransient", "GetPrivateData", "GetPrivateDataByPartialCompositeKey", "GetPrivateDataByRange", "GetPrivateDataQueryResult"}
 	for _, node := range file.AST.Decls {
 		switch node.(type) {
 		case *ast.FuncDecl:
-			var getTransientCalled bool
+			var getPrivateCalled bool
 			taintVars := make(map[string]struct{})
 
 			ast.Inspect(node, func(n ast.Node) bool {
@@ -32,17 +32,20 @@ func (i *BrPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.F
 					// 污点标记
 					if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
 						if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
-							if selectorExpr.Sel.Name == "GetTransient" {
-								getTransientCalled = true
-								if ident, ok := Assign.Lhs[0].(*ast.Ident); ok {
-									taintVars[ident.Name] = struct{}{}
+
+							for _, fname := range privateQuerys {
+								if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
+									getPrivateCalled = true
+									if ident, ok := Assign.Lhs[0].(*ast.Ident); ok {
+										taintVars[ident.Name] = struct{}{}
+									}
 								}
 							}
 						}
 					}
 
 					//污点传播
-					if getTransientCalled {
+					if getPrivateCalled {
 						var tainted bool
 						for _, RhsExpr := range Assign.Rhs {
 							ast.Inspect(RhsExpr, func(n ast.Node) bool {
@@ -64,9 +67,12 @@ func (i *BrPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.F
 							if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
 								if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
 									if selectorExpr.Sel.Name == "Unmarshal" {
-										if ident, ok := callExpr.Args[1].(*ast.UnaryExpr).X.(*ast.Ident); ok {
-											taintVars[ident.Name] = struct{}{}
-										}
+										ast.Inspect(callExpr.Args[1], func(n ast.Node) bool {
+											if ident, ok := n.(*ast.Ident); ok {
+												taintVars[ident.Name] = struct{}{}
+											}
+											return true
+										})
 									}
 
 								}
@@ -94,8 +100,8 @@ func (i *BrPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.F
 							if ident, ok := n.(*ast.Ident); ok {
 								if _, ok := taintVars[ident.Name]; ok {
 									failure := lint.Failure{
-										Failure:    fmt.Sprintf("Private data applied to the branch condition, please check whether privacy leakage will occur."),
-										RuleName:   "chaincode-privacy-leakage-in-br",
+										Failure:    "Private data applied to the branch condition, please check whether privacy leakage will occur.",
+										RuleName:   "chaincode-privacy-br",
 										Category:   "chaincode",
 										Node:       ifStmt,
 										Confidence: 1.0,
@@ -111,8 +117,8 @@ func (i *BrPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.F
 					if ident, ok := switchStmt.Tag.(*ast.Ident); ok {
 						if _, ok := taintVars[ident.Name]; ok {
 							failure := lint.Failure{
-								Failure:    fmt.Sprintf("Private data applied to the branch condition, please check whether privacy leakage will occur."),
-								RuleName:   "chaincode-privacy-leakage-in-br",
+								Failure:    "Private data applied to the branch condition, please check whether privacy leakage will occur.",
+								RuleName:   "chaincode-privacy-br",
 								Category:   "chaincode",
 								Node:       switchStmt,
 								Confidence: 1.0,

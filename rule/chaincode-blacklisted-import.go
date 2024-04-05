@@ -34,7 +34,7 @@ func (*BlackImportRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure 
 						if strings.HasPrefix(pkg, p) {
 							failure := lint.Failure{
 								Failure:    fmt.Sprintf("Blacklisted package found: %v. This package is not secure or may lead to consensus errors.", pkg),
-								RuleName:   "black-listed-import",
+								RuleName:   "chaincode-blacklist-import",
 								Category:   "chaincode",
 								Node:       importSpec,
 								Confidence: 1.0,
@@ -46,7 +46,7 @@ func (*BlackImportRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure 
 						if !(strings.HasPrefix(pkg, "\"github.com/hyperledger")) {
 							failure := lint.Failure{
 								Failure:    fmt.Sprintf("External library found: %v. Please ensure this package does not return inconsistent results.", pkg),
-								RuleName:   "black-listed-import",
+								RuleName:   "chaincode-blacklist-import",
 								Category:   "chaincode",
 								Node:       importSpec,
 								Confidence: 1.0,

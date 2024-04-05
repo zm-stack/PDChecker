@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"fmt"
 	"go/ast"
 
 	"github.com/mgechev/revive/lint"
@@ -40,7 +39,7 @@ func (w lintGoRoutines) Visit(node ast.Node) ast.Visitor {
 	// detect usage of goroutine
 	case *ast.GoStmt:
 		w.onFailure(lint.Failure{
-			Failure:    fmt.Sprintf("concurrent operation detected, which are not recommended in the chaincode."),
+			Failure:    "concurrent operation detected, which are not recommended in the chaincode.",
 			RuleName:   "chaincode-routine",
 			Category:   "chaincode",
 			Node:       n,
