@@ -20,19 +20,26 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 	var failures []lint.Failure
 	var privateQuerys = []string{"GetTransient", "GetPrivateData", "GetPrivateDataByPartialCompositeKey", "GetPrivateDataByRange", "GetPrivateDataQueryResult"}
 	var updateOp = []string{"PutState", "PutPrivateData", "DelPrivateData", "PurgePrivateData"}
+
 	for _, node := range file.AST.Decls {
 		switch node.(type) {
 		case *ast.FuncDecl:
 			var getPrivateCalled, updateCalled bool
 			taintVars := make(map[string]struct{})
+
 			ast.Inspect(node, func(n ast.Node) bool {
 				if Assign, ok := n.(*ast.AssignStmt); ok {
 					if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
 						if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+							// 污点标记
+							if strings.Compare(selectorExpr.Sel.Name, "PutPrivateData") == 0 {
+								if ident, ok := callExpr.Args[2].(*ast.Ident); ok {
+									taintVars[ident.Name] = struct{}{}
+								}
+							}
 							for _, fname := range privateQuerys {
 								if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
 									getPrivateCalled = true
-									// 污点标记
 									if ident, ok := Assign.Lhs[0].(*ast.Ident); ok {
 										taintVars[ident.Name] = struct{}{}
 									}
@@ -46,15 +53,27 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 						}
 					}
 				}
-
 				return true
 			})
 			// 污点传播
 			if getPrivateCalled && updateCalled {
 				ast.Inspect(node, func(n ast.Node) bool {
-					if Assign, ok := n.(*ast.AssignStmt); ok {
+					var AssginNode *ast.AssignStmt
+					var AssginFound bool
+					if RangeStmt, ok := n.(*ast.RangeStmt); ok {
+						if RangeKey, ok := RangeStmt.Key.(*ast.Ident); ok {
+							if Assign, ok := RangeKey.Obj.Decl.(*ast.AssignStmt); ok {
+								AssginNode = Assign
+								AssginFound = true
+							}
+						}
+					} else if Assign, ok := n.(*ast.AssignStmt); ok {
+						AssginNode = Assign
+						AssginFound = true
+					}
+					if AssginFound {
 						var tainted bool
-						for _, RhsExpr := range Assign.Rhs {
+						for _, RhsExpr := range AssginNode.Rhs {
 							ast.Inspect(RhsExpr, func(n ast.Node) bool {
 								if ident, ok := n.(*ast.Ident); ok {
 									if _, ok := taintVars[ident.Name]; ok {
@@ -65,13 +84,18 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 							})
 						}
 						if tainted {
-							if ident, ok := Assign.Lhs[0].(*ast.Ident); ok {
-								if !strings.EqualFold(ident.Name, "err") && !strings.EqualFold(ident.Name, "error") {
-									taintVars[ident.Name] = struct{}{}
-								}
+							for _, LhsExpr := range AssginNode.Lhs {
+								ast.Inspect(LhsExpr, func(n ast.Node) bool {
+									if ident, ok := n.(*ast.Ident); ok {
+										if !strings.EqualFold(ident.Name, "err") && !strings.EqualFold(ident.Name, "error") {
+											taintVars[ident.Name] = struct{}{}
+										}
+									}
+									return true
+								})
 							}
 							// 处理	json.Unmarshal的情况
-							if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
+							if callExpr, ok := AssginNode.Rhs[0].(*ast.CallExpr); ok {
 								if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
 									if selectorExpr.Sel.Name == "Unmarshal" {
 										ast.Inspect(callExpr.Args[1], func(n ast.Node) bool {
@@ -84,8 +108,9 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 								}
 							}
 						}
-						// 漏洞检测
-					} else if ret, ok := n.(*ast.ReturnStmt); ok {
+					}
+					// 漏洞检测
+					if ret, ok := n.(*ast.ReturnStmt); ok {
 						ast.Inspect(ret, func(n ast.Node) bool {
 							if ident, ok := n.(*ast.Ident); ok {
 								if _, ok := taintVars[ident.Name]; ok {
@@ -103,12 +128,10 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 						})
 
 					}
-
 					return true
 				})
 			}
 		}
 	}
-
 	return failures
 }

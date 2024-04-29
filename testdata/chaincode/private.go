@@ -4,680 +4,587 @@ Copyright IBM Corp. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 
-// ====CHAINCODE EXECUTION SAMPLES (CLI) ==================
-
-// ==== Invoke marbles, pass private data as base64 encoded bytes in transient map ====
-//
-// export MARBLE=$(echo -n "{\"name\":\"marble1\",\"color\":\"blue\",\"size\":35,\"owner\":\"tom\",\"price\":99}" | base64 | tr -d \\n)
-// peer chaincode invoke -C mychannel -n marblesp -c '{"Args":["initMarble"]}' --transient "{\"marble\":\"$MARBLE\"}"
-//
-// export MARBLE=$(echo -n "{\"name\":\"marble2\",\"color\":\"red\",\"size\":50,\"owner\":\"tom\",\"price\":102}" | base64 | tr -d \\n)
-// peer chaincode invoke -C mychannel -n marblesp -c '{"Args":["initMarble"]}' --transient "{\"marble\":\"$MARBLE\"}"
-//
-// export MARBLE=$(echo -n "{\"name\":\"marble3\",\"color\":\"blue\",\"size\":70,\"owner\":\"tom\",\"price\":103}" | base64 | tr -d \\n)
-// peer chaincode invoke -C mychannel -n marblesp -c '{"Args":["initMarble"]}' --transient "{\"marble\":\"$MARBLE\"}"
-//
-// export MARBLE_OWNER=$(echo -n "{\"name\":\"marble2\",\"owner\":\"jerry\"}" | base64 | tr -d \\n)
-// peer chaincode invoke -C mychannel -n marblesp -c '{"Args":["transferMarble"]}' --transient "{\"marble_owner\":\"$MARBLE_OWNER\"}"
-//
-// export MARBLE_DELETE=$(echo -n "{\"name\":\"marble1\"}" | base64 | tr -d \\n)
-// peer chaincode invoke -C mychannel -n marblesp -c '{"Args":["delete"]}' --transient "{\"marble_delete\":\"$MARBLE_DELETE\"}"
-
-// ==== Query marbles, since queries are not recorded on chain we don't need to hide private data in transient map ====
-// peer chaincode query -C mychannel -n marblesp -c '{"Args":["readMarble","marble1"]}'
-// peer chaincode query -C mychannel -n marblesp -c '{"Args":["readMarblePrivateDetails","marble1"]}'
-// peer chaincode query -C mychannel -n marblesp -c '{"Args":["getMarblesByRange","marble1","marble4"]}'
-
-// Query a marble's public data hash
-//	peer chaincode query -C mychannel -n marblesp -c '{"Args":["getMarbleHash","collectionMarbles","marble1"]}'
-
-// Rich Query (Only supported if CouchDB is used as state database):
-//   peer chaincode query -C mychannel -n marblesp -c '{"Args":["queryMarblesByOwner","tom"]}'
-//   peer chaincode query -C mychannel -n marblesp -c '{"Args":["queryMarbles","{\"selector\":{\"owner\":\"tom\"}}"]}'
-
-// INDEXES TO SUPPORT COUCHDB RICH QUERIES
-//
-// Indexes in CouchDB are required in order to make JSON queries efficient and are required for
-// any JSON query with a sort. As of Hyperledger Fabric 1.1, indexes may be packaged alongside
-// chaincode in a META-INF/statedb/couchdb/indexes directory. Or for indexes on private data
-// collections, in a META-INF/statedb/couchdb/collections/<collection_name>/indexes directory.
-// Each index must be defined in its own text file with extension *.json with the index
-// definition formatted in JSON following the CouchDB index JSON syntax as documented at:
-// http://docs.couchdb.org/en/2.1.1/api/database/find.html#db-index
-//
-// This marbles02_private example chaincode demonstrates a packaged index which you
-// can find in META-INF/statedb/couchdb/collection/collectionMarbles/indexes/indexOwner.json.
-// For deployment of chaincode to production environments, it is recommended
-// to define any indexes alongside chaincode so that the chaincode and supporting indexes
-// are deployed automatically as a unit, once the chaincode has been installed on a peer and
-// instantiated on a channel. See Hyperledger Fabric documentation for more details.
-//
-// If you have access to the your peer's CouchDB state database in a development environment,
-// you may want to iteratively test various indexes in support of your chaincode queries.  You
-// can use the CouchDB Fauxton interface or a command line curl utility to create and update
-// indexes. Then once you finalize an index, include the index definition alongside your
-// chaincode in the META-INF/statedb/couchdb/indexes directory or
-// META-INF/statedb/couchdb/collections/<collection_name>/indexes directory, for packaging
-// and deployment to managed environments.
-//
-// In the examples below you can find index definitions that support marbles02_private
-// chaincode queries, along with the syntax that you can use in development environments
-// to create the indexes in the CouchDB Fauxton interface.
-//
-
-//Example hostname:port configurations to access CouchDB.
-//
-//To access CouchDB docker container from within another docker container or from vagrant environments:
-// http://couchdb:5984/
-//
-//Inside couchdb docker container
-// http://127.0.0.1:5984/
-
-// Index for docType, owner.
-// Note that docType and owner fields must be prefixed with the "data" wrapper
-//
-// Index definition for use with Fauxton interface
-// {"index":{"fields":["data.docType","data.owner"]},"ddoc":"indexOwnerDoc", "name":"indexOwner","type":"json"}
-
-// Index for docType, owner, size (descending order).
-// Note that docType, owner and size fields must be prefixed with the "data" wrapper
-//
-// Index definition for use with Fauxton interface
-// {"index":{"fields":[{"data.size":"desc"},{"data.docType":"desc"},{"data.owner":"desc"}]},"ddoc":"indexSizeSortDoc", "name":"indexSizeSortDesc","type":"json"}
-
-// Rich Query with index design doc and index name specified (Only supported if CouchDB is used as state database):
-//   peer chaincode query -C mychannel -n marblesp -c '{"Args":["queryMarbles","{\"selector\":{\"docType\":\"marble\",\"owner\":\"tom\"}, \"use_index\":[\"_design/indexOwnerDoc\", \"indexOwner\"]}"]}'
-
-// Rich Query with index design doc specified only (Only supported if CouchDB is used as state database):
-//   peer chaincode query -C mychannel -n marblesp -c '{"Args":["queryMarbles","{\"selector\":{\"docType\":{\"$eq\":\"marble\"},\"owner\":{\"$eq\":\"tom\"},\"size\":{\"$gt\":0}},\"fields\":[\"docType\",\"owner\",\"size\"],\"sort\":[{\"size\":\"desc\"}],\"use_index\":\"_design/indexSizeSortDoc\"}"]}'
-
-package fixtures
+package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"log"
 
 	"github.com/hyperledger/fabric-chaincode-go/shim"
-	pb "github.com/hyperledger/fabric-protos-go/peer"
+	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
-// SimpleChaincode example simple Chaincode implementation
-type SimpleChaincode struct {
+const assetCollection = "assetCollection"
+const transferAgreementObjectType = "transferAgreement"
+
+// SmartContract of this fabric sample
+type SmartContract struct {
+	contractapi.Contract
 }
 
-type marble struct {
-	ObjectType string `json:"docType"` //docType is used to distinguish the various types of objects in state database
-	Name       string `json:"name"`    //the fieldtags are needed to keep case from bouncing around
-	Color      string `json:"color"`
-	Size       int    `json:"size"`
-	Owner      string `json:"owner"`
+// Asset describes main asset details that are visible to all organizations
+type Asset struct {
+	Type  string `json:"objectType"` //Type is used to distinguish the various types of objects in state database
+	ID    string `json:"assetID"`
+	Color string `json:"color"`
+	Size  int    `json:"size"`
+	Owner string `json:"owner"`
 }
 
-type marblePrivateDetails struct {
-	ObjectType string `json:"docType"` //docType is used to distinguish the various types of objects in state database
-	Name       string `json:"name"`    //the fieldtags are needed to keep case from bouncing around
-	Price      int    `json:"price"`
+// AssetPrivateDetails describes details that are private to owners
+type AssetPrivateDetails struct {
+	ID             string `json:"assetID"`
+	AppraisedValue int    `json:"appraisedValue"`
 }
 
-// ===================================================================================
-// Main
-// ===================================================================================
-func main() {
-	err := shim.Start(new(SimpleChaincode))
+// TransferAgreement describes the buyer agreement returned by ReadTransferAgreement
+type TransferAgreement struct {
+	ID      string `json:"assetID"`
+	BuyerID string `json:"buyerID"`
+}
+
+// CreateAsset creates a new asset by placing the main asset details in the assetCollection
+// that can be read by both organizations. The appraisal value is stored in the owners org specific collection.
+func (s *SmartContract) CreateAsset(ctx contractapi.TransactionContextInterface) error {
+
+	// Get new asset from transient map
+	transientMap, err := ctx.GetStub().GetTransient()
 	if err != nil {
-		fmt.Printf("Error starting Simple chaincode: %s", err)
-	}
-}
-
-// Init initializes chaincode
-// ===========================
-func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
-	return shim.Success(nil)
-}
-
-// Invoke - Our entry point for Invocations
-// ========================================
-func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
-	function, args := stub.GetFunctionAndParameters()
-	fmt.Println("invoke is running " + function)
-
-	// Handle different functions
-	switch function {
-	case "initMarble":
-		//create a new marble
-		return t.initMarble(stub, args)
-	case "readMarble":
-		//read a marble
-		return t.readMarble(stub, args)
-	case "readMarblePrivateDetails":
-		//read a marble private details
-		return t.readMarblePrivateDetails(stub, args)
-	case "transferMarble":
-		//change owner of a specific marble
-		return t.transferMarble(stub, args)
-	case "delete":
-		//delete a marble
-		return t.delete(stub, args)
-	case "queryMarblesByOwner":
-		//find marbles for owner X using rich query
-		return t.queryMarblesByOwner(stub, args)
-	case "queryMarbles":
-		//find marbles based on an ad hoc rich query
-		return t.queryMarbles(stub, args)
-	case "getMarblesByRange":
-		//get marbles based on range query
-		return t.getMarblesByRange(stub, args)
-	case "getMarbleHash":
-		//verify a marble using the public hash
-		return t.getMarbleHash(stub, args)
-	default:
-		//error
-		fmt.Println("invoke did not find func: " + function)
-		return shim.Error("Received unknown function invocation")
-	}
-}
-
-// ============================================================
-// initMarble - create a new marble, store into chaincode state
-// ============================================================
-func (t *SimpleChaincode) initMarble(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var err error
-
-	type marbleTransientInput struct {
-		Name  string `json:"name"` //the fieldtags are needed to keep case from bouncing around
-		Color string `json:"color"`
-		Size  int    `json:"size"`
-		Owner string `json:"owner"`
-		Price int    `json:"price"`
+		return fmt.Errorf("error getting transient: %v", err)
 	}
 
-	// ==== Input sanitation ====
-	fmt.Println("- start init marble")
-
-	if len(args) != 0 {
-		return shim.Error("Incorrect number of arguments. Private marble data must be passed in transient map.")
-	}
-
-	transMap, err := stub.GetTransient()
-	if err != nil {
-		return shim.Error("Error getting transient: " + err.Error())
-	}
-
-	marbleJsonBytes, ok := transMap["marble"]
+	// Asset properties are private, therefore they get passed in transient field, instead of func args
+	transientAssetJSON, ok := transientMap["asset_properties"]
 	if !ok {
-		return shim.Error("marble must be a key in the transient map")
+		//log error to stdout
+		return fmt.Errorf("asset not found in the transient map input")
 	}
 
-	if len(marbleJsonBytes) == 0 {
-		return shim.Error("marble value in the transient map must be a non-empty JSON string")
+	type assetTransientInput struct {
+		Type           string `json:"objectType"` //Type is used to distinguish the various types of objects in state database
+		ID             string `json:"assetID"`
+		Color          string `json:"color"`
+		Size           int    `json:"size"`
+		AppraisedValue int    `json:"appraisedValue"`
 	}
 
-	var marbleInput marbleTransientInput
-	err = json.Unmarshal(marbleJsonBytes, &marbleInput)
+	var assetInput assetTransientInput
+	err = json.Unmarshal(transientAssetJSON, &assetInput)
 	if err != nil {
-		return shim.Error("Failed to decode JSON of: " + string(marbleJsonBytes))
+		return fmt.Errorf("failed to unmarshal JSON: %v", err)
 	}
 
-	if len(marbleInput.Name) == 0 {
-		return shim.Error("name field must be a non-empty string")
+	if len(assetInput.Type) == 0 {
+		return fmt.Errorf("objectType field must be a non-empty string")
 	}
-	if len(marbleInput.Color) == 0 {
-		return shim.Error("color field must be a non-empty string")
+	if len(assetInput.ID) == 0 {
+		return fmt.Errorf("assetID field must be a non-empty string")
 	}
-	if marbleInput.Size <= 0 {
-		return shim.Error("size field must be a positive integer")
+	if len(assetInput.Color) == 0 {
+		return fmt.Errorf("color field must be a non-empty string")
 	}
-	if len(marbleInput.Owner) == 0 {
-		return shim.Error("owner field must be a non-empty string")
+	if assetInput.Size <= 0 {
+		return fmt.Errorf("size field must be a positive integer")
 	}
-	if marbleInput.Price <= 0 {
-		return shim.Error("price field must be a positive integer")
+	if assetInput.AppraisedValue <= 0 {
+		return fmt.Errorf("appraisedValue field must be a positive integer")
 	}
 
-	// ==== Check if marble already exists ====
-	marbleAsBytes, err := stub.GetPrivateData("collectionMarbles", marbleInput.Name)
+	// Check if asset already exists
+	assetAsBytes, err := ctx.GetStub().GetPrivateData(assetCollection, assetInput.ID)
 	if err != nil {
-		return shim.Error("Failed to get marble: " + err.Error())
-	} else if marbleAsBytes != nil {
-		fmt.Println("This marble already exists: " + marbleInput.Name)
-		return shim.Error("This marble already exists: " + marbleInput.Name)
+		return fmt.Errorf("failed to get asset: %v", err)
+	} else if assetAsBytes != nil {
+		fmt.Println("Asset already exists: " + assetInput.ID)
+		return fmt.Errorf("this asset already exists: " + assetInput.ID)
 	}
 
-	// ==== Create marble object, marshal to JSON, and save to state ====
-	marble := &marble{
-		ObjectType: "marble",
-		Name:       marbleInput.Name,
-		Color:      marbleInput.Color,
-		Size:       marbleInput.Size,
-		Owner:      marbleInput.Owner,
-	}
-	marbleJSONasBytes, err := json.Marshal(marble)
+	// Get ID of submitting client identity
+	clientID, err := submittingClientIdentity(ctx)
 	if err != nil {
-		return shim.Error(err.Error())
+		return err
 	}
 
-	// === Save marble to state ===
-	err = stub.PutPrivateData("collectionMarbles", marbleInput.Name, marbleJSONasBytes)
+	// Verify that the client is submitting request to peer in their organization
+	// This is to ensure that a client from another org doesn't attempt to read or
+	// write private data from this peer.
+	err = verifyClientOrgMatchesPeerOrg(ctx)
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("CreateAsset cannot be performed: Error %v", err)
 	}
 
-	// ==== Create marble private details object with price, marshal to JSON, and save to state ====
-	marblePrivateDetails := &marblePrivateDetails{
-		ObjectType: "marblePrivateDetails",
-		Name:       marbleInput.Name,
-		Price:      marbleInput.Price,
+	// Make submitting client the owner
+	asset := Asset{
+		Type:  assetInput.Type,
+		ID:    assetInput.ID,
+		Color: assetInput.Color,
+		Size:  assetInput.Size,
+		Owner: clientID,
 	}
-	marblePrivateDetailsBytes, err := json.Marshal(marblePrivateDetails)
+	assetJSONasBytes, err := json.Marshal(asset)
 	if err != nil {
-		return shim.Error(err.Error())
-	}
-	err = stub.PutPrivateData("collectionMarblePrivateDetails", marbleInput.Name, marblePrivateDetailsBytes)
-	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("failed to marshal asset into JSON: %v", err)
 	}
 
-	//  ==== Index the marble to enable color-based range queries, e.g. return all blue marbles ====
-	//  An 'index' is a normal key/value entry in state.
-	//  The key is a composite key, with the elements that you want to range query on listed first.
-	//  In our case, the composite key is based on indexName=color~name.
-	//  This will enable very efficient state range queries based on composite keys matching indexName=color~*
-	indexName := "color~name"
-	colorNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{marble.Color, marble.Name})
-	if err != nil {
-		return shim.Error(err.Error())
-	}
-	//  Save index entry to state. Only the key name is needed, no need to store a duplicate copy of the marble.
-	//  Note - passing a 'nil' value will effectively delete the key from state, therefore we pass null character as value
-	value := []byte{0x00}
-	stub.PutPrivateData("collectionMarbles", colorNameIndexKey, value)
+	// Save asset to private data collection
+	// Typical logger, logs to stdout/file in the fabric managed docker container, running this chaincode
+	// Look for container name like dev-peer0.org1.example.com-{chaincodename_version}-xyz
+	log.Printf("CreateAsset Put: collection %v, ID %v, owner %v", assetCollection, assetInput.ID, clientID)
 
-	// ==== Marble saved and indexed. Return success ====
-	fmt.Println("- end init marble")
-	return shim.Success(nil)
+	err = ctx.GetStub().PutPrivateData(assetCollection, assetInput.ID, assetJSONasBytes)
+	if err != nil {
+		return fmt.Errorf("failed to put asset into private data collecton: %v", err)
+	}
+
+	// Save asset details to collection visible to owning organization
+	assetPrivateDetails := AssetPrivateDetails{
+		ID:             assetInput.ID,
+		AppraisedValue: assetInput.AppraisedValue,
+	}
+
+	assetPrivateDetailsAsBytes, err := json.Marshal(assetPrivateDetails) // marshal asset details to JSON
+	if err != nil {
+		return fmt.Errorf("failed to marshal into JSON: %v", err)
+	}
+
+	// Get collection name for this organization.
+	orgCollection, err := getCollectionName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
+	}
+
+	// Put asset appraised value into owners org specific private data collection
+	log.Printf("Put: collection %v, ID %v", orgCollection, assetInput.ID)
+	err = ctx.GetStub().PutPrivateData(orgCollection, assetInput.ID, assetPrivateDetailsAsBytes)
+	if err != nil {
+		return fmt.Errorf("failed to put asset private details: %v", err)
+	}
+	return nil
 }
 
-// ===============================================
-// readMarble - read a marble from chaincode state
-// ===============================================
-func (t *SimpleChaincode) readMarble(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var name, jsonResp string
-	var err error
+// AgreeToTransfer is used by the potential buyer of the asset to agree to the
+// asset value. The agreed to appraisal value is stored in the buying orgs
+// org specifc collection, while the the buyer client ID is stored in the asset collection
+// using a composite key
+func (s *SmartContract) AgreeToTransfer(ctx contractapi.TransactionContextInterface) error {
 
-	if len(args) != 1 {
-		return shim.Error("Incorrect number of arguments. Expecting name of the marble to query")
-	}
-
-	name = args[0]
-	valAsbytes, err := stub.GetPrivateData("collectionMarbles", name) //get the marble from chaincode state
+	// Get ID of submitting client identity
+	clientID, err := submittingClientIdentity(ctx)
 	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to get state for " + name + ": " + err.Error() + "\"}"
-		return shim.Error(jsonResp)
-	} else if valAsbytes == nil {
-		jsonResp = "{\"Error\":\"Marble does not exist: " + name + "\"}"
-		return shim.Error(jsonResp)
+		return err
 	}
 
-	return shim.Success(valAsbytes)
-}
-
-// ===============================================
-// readMarblereadMarblePrivateDetails - read a marble private details from chaincode state
-// ===============================================
-func (t *SimpleChaincode) readMarblePrivateDetails(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var name, jsonResp string
-	var err error
-
-	if len(args) != 1 {
-		return shim.Error("Incorrect number of arguments. Expecting name of the marble to query")
-	}
-
-	name = args[0]
-	valAsbytes, err := stub.GetPrivateData("collectionMarblePrivateDetails", name) //get the marble private details from chaincode state
+	// Value is private, therefore it gets passed in transient field
+	transientMap, err := ctx.GetStub().GetTransient()
 	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to get private details for " + name + ": " + err.Error() + "\"}"
-		return shim.Error(jsonResp)
-	} else if valAsbytes == nil {
-		jsonResp = "{\"Error\":\"Marble private details does not exist: " + name + "\"}"
-		return shim.Error(jsonResp)
+		return fmt.Errorf("error getting transient: %v", err)
 	}
 
-	return shim.Success(valAsbytes)
-}
-
-// ==================================================
-// delete - remove a marble key/value pair from state
-// ==================================================
-func (t *SimpleChaincode) delete(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	fmt.Println("- start delete marble")
-
-	type marbleDeleteTransientInput struct {
-		Name string `json:"name"`
-	}
-
-	if len(args) != 0 {
-		return shim.Error("Incorrect number of arguments. Private marble name must be passed in transient map.")
-	}
-
-	transMap, err := stub.GetTransient()
-	if err != nil {
-		return shim.Error("Error getting transient: " + err.Error())
-	}
-
-	marbleDeleteJsonBytes, ok := transMap["marble_delete"]
+	// Persist the JSON bytes as-is so that there is no risk of nondeterministic marshaling.
+	valueJSONasBytes, ok := transientMap["asset_value"]
 	if !ok {
-		return shim.Error("marble_delete must be a key in the transient map")
+		return fmt.Errorf("asset_value key not found in the transient map")
 	}
 
-	if len(marbleDeleteJsonBytes) == 0 {
-		return shim.Error("marble_delete value in the transient map must be a non-empty JSON string")
-	}
-
-	var marbleDeleteInput marbleDeleteTransientInput
-	err = json.Unmarshal(marbleDeleteJsonBytes, &marbleDeleteInput)
+	// Unmarshal the tranisent map to get the asset ID.
+	var valueJSON AssetPrivateDetails
+	err = json.Unmarshal(valueJSONasBytes, &valueJSON)
 	if err != nil {
-		return shim.Error("Failed to decode JSON of: " + string(marbleDeleteJsonBytes))
+		return fmt.Errorf("failed to unmarshal JSON: %v", err)
 	}
 
-	if len(marbleDeleteInput.Name) == 0 {
-		return shim.Error("name field must be a non-empty string")
+	// Do some error checking since we get the chance
+	if len(valueJSON.ID) == 0 {
+		return fmt.Errorf("assetID field must be a non-empty string")
+	}
+	if valueJSON.AppraisedValue <= 0 {
+		return fmt.Errorf("appraisedValue field must be a positive integer")
 	}
 
-	// to maintain the color~name index, we need to read the marble first and get its color
-	valAsbytes, err := stub.GetPrivateData("collectionMarbles", marbleDeleteInput.Name) //get the marble from chaincode state
+	// Read asset from the private data collection
+	asset, err := s.ReadAsset(ctx, valueJSON.ID)
 	if err != nil {
-		return shim.Error("Failed to get state for " + marbleDeleteInput.Name)
-	} else if valAsbytes == nil {
-		return shim.Error("Marble does not exist: " + marbleDeleteInput.Name)
+		return fmt.Errorf("error reading asset: %v", err)
+	}
+	if asset == nil {
+		return fmt.Errorf("%v does not exist", valueJSON.ID)
+	}
+	// Verify that the client is submitting request to peer in their organization
+	err = verifyClientOrgMatchesPeerOrg(ctx)
+	if err != nil {
+		return fmt.Errorf("AgreeToTransfer cannot be performed: Error %v", err)
 	}
 
-	var marbleToDelete marble
-	err = json.Unmarshal([]byte(valAsbytes), &marbleToDelete)
+	// Get collection name for this organization. Needs to be read by a member of the organization.
+	orgCollection, err := getCollectionName(ctx)
 	if err != nil {
-		return shim.Error("Failed to decode JSON of: " + string(valAsbytes))
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
 	}
 
-	// delete the marble from state
-	err = stub.DelPrivateData("collectionMarbles", marbleDeleteInput.Name)
+	log.Printf("AgreeToTransfer Put: collection %v, ID %v", orgCollection, valueJSON.ID)
+	// Put agreed value in the org specifc private data collection
+	err = ctx.GetStub().PutPrivateData(orgCollection, valueJSON.ID, valueJSONasBytes)
 	if err != nil {
-		return shim.Error("Failed to delete state:" + err.Error())
+		return fmt.Errorf("failed to put asset bid: %v", err)
 	}
 
-	// Also delete the marble from the color~name index
-	indexName := "color~name"
-	colorNameIndexKey, err := stub.CreateCompositeKey(indexName, []string{marbleToDelete.Color, marbleToDelete.Name})
+	// Create agreeement that indicates which identity has agreed to purchase
+	// In a more realistic transfer scenario, a transfer agreement would be secured to ensure that it cannot
+	// be overwritten by another channel member
+	transferAgreeKey, err := ctx.GetStub().CreateCompositeKey(transferAgreementObjectType, []string{valueJSON.ID})
 	if err != nil {
-		return shim.Error(err.Error())
-	}
-	err = stub.DelPrivateData("collectionMarbles", colorNameIndexKey)
-	if err != nil {
-		return shim.Error("Failed to delete state:" + err.Error())
+		return fmt.Errorf("failed to create composite key: %v", err)
 	}
 
-	// Finally, delete private details of marble
-	err = stub.DelPrivateData("collectionMarblePrivateDetails", marbleDeleteInput.Name)
+	log.Printf("AgreeToTransfer Put: collection %v, ID %v, Key %v", assetCollection, valueJSON.ID, transferAgreeKey)
+	err = ctx.GetStub().PutPrivateData(assetCollection, transferAgreeKey, []byte(clientID))
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("failed to put asset bid: %v", err)
 	}
 
-	return shim.Success(nil)
+	return nil
 }
 
-// ===========================================================
-// transfer a marble by setting a new owner name on the marble
-// ===========================================================
-func (t *SimpleChaincode) transferMarble(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+// TransferAsset transfers the asset to the new owner by setting a new owner ID
+func (s *SmartContract) TransferAsset(ctx contractapi.TransactionContextInterface) error {
 
-	fmt.Println("- start transfer marble")
-
-	type marbleTransferTransientInput struct {
-		Name  string `json:"name"`
-		Owner string `json:"owner"`
-	}
-
-	if len(args) != 0 {
-		return shim.Error("Incorrect number of arguments. Private marble data must be passed in transient map.")
-	}
-
-	transMap, err := stub.GetTransient()
+	transientMap, err := ctx.GetStub().GetTransient()
 	if err != nil {
-		return shim.Error("Error getting transient: " + err.Error())
+		return fmt.Errorf("error getting transient %v", err)
 	}
 
-	marbleOwnerJsonBytes, ok := transMap["marble_owner"]
+	// Asset properties are private, therefore they get passed in transient field
+	transientTransferJSON, ok := transientMap["asset_owner"]
 	if !ok {
-		return shim.Error("marble_owner must be a key in the transient map")
+		return fmt.Errorf("asset owner not found in the transient map")
 	}
 
-	if len(marbleOwnerJsonBytes) == 0 {
-		return shim.Error("marble_owner value in the transient map must be a non-empty JSON string")
+	type assetTransferTransientInput struct {
+		ID       string `json:"assetID"`
+		BuyerMSP string `json:"buyerMSP"`
 	}
 
-	var marbleTransferInput marbleTransferTransientInput
-	err = json.Unmarshal(marbleOwnerJsonBytes, &marbleTransferInput)
+	var assetTransferInput assetTransferTransientInput
+	err = json.Unmarshal(transientTransferJSON, &assetTransferInput)
 	if err != nil {
-		return shim.Error("Failed to decode JSON of: " + string(marbleOwnerJsonBytes))
+		return fmt.Errorf("failed to unmarshal JSON: %v", err)
 	}
 
-	if len(marbleTransferInput.Name) == 0 {
-		return shim.Error("name field must be a non-empty string")
+	if len(assetTransferInput.ID) == 0 {
+		return fmt.Errorf("assetID field must be a non-empty string")
 	}
-	if len(marbleTransferInput.Owner) == 0 {
-		return shim.Error("owner field must be a non-empty string")
+	if len(assetTransferInput.BuyerMSP) == 0 {
+		return fmt.Errorf("buyerMSP field must be a non-empty string")
 	}
-
-	marbleAsBytes, err := stub.GetPrivateData("collectionMarbles", marbleTransferInput.Name)
+	log.Printf("TransferAsset: verify asset exists ID %v", assetTransferInput.ID)
+	// Read asset from the private data collection
+	asset, err := s.ReadAsset(ctx, assetTransferInput.ID)
 	if err != nil {
-		return shim.Error("Failed to get marble:" + err.Error())
-	} else if marbleAsBytes == nil {
-		return shim.Error("Marble does not exist: " + marbleTransferInput.Name)
+		return fmt.Errorf("error reading asset: %v", err)
 	}
-
-	marbleToTransfer := marble{}
-	err = json.Unmarshal(marbleAsBytes, &marbleToTransfer) //unmarshal it aka JSON.parse()
+	if asset == nil {
+		return fmt.Errorf("%v does not exist", assetTransferInput.ID)
+	}
+	// Verify that the client is submitting request to peer in their organization
+	err = verifyClientOrgMatchesPeerOrg(ctx)
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("TransferAsset cannot be performed: Error %v", err)
 	}
-	marbleToTransfer.Owner = marbleTransferInput.Owner //change the owner
 
-	marbleJSONasBytes, _ := json.Marshal(marbleToTransfer)
-	err = stub.PutPrivateData("collectionMarbles", marbleToTransfer.Name, marbleJSONasBytes) //rewrite the marble
+	// Verify transfer details and transfer owner
+	err = s.verifyAgreement(ctx, assetTransferInput.ID, asset.Owner, assetTransferInput.BuyerMSP)
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("failed transfer verification: %v", err)
 	}
 
-	fmt.Println("- end transferMarble (success)")
-	return shim.Success(nil)
+	transferAgreement, err := s.ReadTransferAgreement(ctx, assetTransferInput.ID)
+	if err != nil {
+		return fmt.Errorf("failed ReadTransferAgreement to find buyerID: %v", err)
+	}
+	if transferAgreement.BuyerID == "" {
+		return fmt.Errorf("BuyerID not found in TransferAgreement for %v", assetTransferInput.ID)
+	}
+
+	// Transfer asset in private data collection to new owner
+	asset.Owner = transferAgreement.BuyerID
+
+	assetJSONasBytes, err := json.Marshal(asset)
+	if err != nil {
+		return fmt.Errorf("failed marshalling asset %v: %v", assetTransferInput.ID, err)
+	}
+
+	log.Printf("TransferAsset Put: collection %v, ID %v", assetCollection, assetTransferInput.ID)
+	err = ctx.GetStub().PutPrivateData(assetCollection, assetTransferInput.ID, assetJSONasBytes) //rewrite the asset
+	if err != nil {
+		return err
+	}
+
+	// Get collection name for this organization
+	ownersCollection, err := getCollectionName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
+	}
+
+	// Delete the asset appraised value from this organization's private data collection
+	err = ctx.GetStub().DelPrivateData(ownersCollection, assetTransferInput.ID)
+	if err != nil {
+		return err
+	}
+
+	// Delete the transfer agreement from the asset collection
+	transferAgreeKey, err := ctx.GetStub().CreateCompositeKey(transferAgreementObjectType, []string{assetTransferInput.ID})
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	err = ctx.GetStub().DelPrivateData(assetCollection, transferAgreeKey)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
-// ===========================================================================================
-// getMarblesByRange performs a range query based on the start and end keys provided.
+// verifyAgreement is an internal helper function used by TransferAsset to verify
+// that the transfer is being initiated by the owner and that the buyer has agreed
+// to the same appraisal value as the owner
+func (s *SmartContract) verifyAgreement(ctx contractapi.TransactionContextInterface, assetID string, owner string, buyerMSP string) error {
 
-// Read-only function results are not typically submitted to ordering. If the read-only
-// results are submitted to ordering, or if the query is used in an update transaction
-// and submitted to ordering, then the committing peers will re-execute to guarantee that
-// result sets are stable between endorsement time and commit time. The transaction is
-// invalidated by the committing peers if the result set has changed between endorsement
-// time and commit time.
-// Therefore, range queries are a safe option for performing update transactions based on query results.
-// ===========================================================================================
-func (t *SimpleChaincode) getMarblesByRange(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+	// Check 1: verify that the transfer is being initiatied by the owner
 
-	if len(args) < 2 {
-		return shim.Error("Incorrect number of arguments. Expecting 2")
-	}
-
-	startKey := args[0]
-	endKey := args[1]
-
-	resultsIterator, err := stub.GetPrivateDataByRange("collectionMarbles", startKey, endKey)
+	// Get ID of submitting client identity
+	clientID, err := submittingClientIdentity(ctx)
 	if err != nil {
-		return shim.Error(err.Error())
+		return err
 	}
-	defer resultsIterator.Close()
 
-	// buffer is a JSON array containing QueryResults
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
-
-	bArrayMemberAlreadyWritten := false
-	for resultsIterator.HasNext() {
-		queryResponse, err := resultsIterator.Next()
-		if err != nil {
-			return shim.Error(err.Error())
-		}
-		// Add a comma before array members, suppress it for the first array member
-		if bArrayMemberAlreadyWritten {
-			buffer.WriteString(",")
-		}
-
-		buffer.WriteString(
-			fmt.Sprintf(
-				`{"Key":"%s", "Record":%s}`,
-				queryResponse.Key, queryResponse.Value,
-			),
-		)
-		bArrayMemberAlreadyWritten = true
+	if clientID != owner {
+		return fmt.Errorf("error: submitting client identity does not own asset")
 	}
-	buffer.WriteString("]")
 
-	fmt.Printf("- getMarblesByRange queryResult:\n%s\n", buffer.String())
+	// Check 2: verify that the buyer has agreed to the appraised value
 
-	return shim.Success(buffer.Bytes())
+	// Get collection names
+	collectionOwner, err := getCollectionName(ctx) // get owner collection from caller identity
+	if err != nil {
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
+	}
+
+	collectionBuyer := buyerMSP + "PrivateCollection" // get buyers collection
+
+	// Get hash of owners agreed to value
+	ownerAppraisedValueHash, err := ctx.GetStub().GetPrivateDataHash(collectionOwner, assetID)
+	if err != nil {
+		return fmt.Errorf("failed to get hash of appraised value from owners collection %v: %v", collectionOwner, err)
+	}
+	if ownerAppraisedValueHash == nil {
+		return fmt.Errorf("hash of appraised value for %v does not exist in collection %v", assetID, collectionOwner)
+	}
+
+	// Get hash of buyers agreed to value
+	buyerAppraisedValueHash, err := ctx.GetStub().GetPrivateDataHash(collectionBuyer, assetID)
+	if err != nil {
+		return fmt.Errorf("failed to get hash of appraised value from buyer collection %v: %v", collectionBuyer, err)
+	}
+	if buyerAppraisedValueHash == nil {
+		return fmt.Errorf("hash of appraised value for %v does not exist in collection %v. AgreeToTransfer must be called by the buyer first", assetID, collectionBuyer)
+	}
+
+	// Verify that the two hashes match
+	if !bytes.Equal(ownerAppraisedValueHash, buyerAppraisedValueHash) {
+		return fmt.Errorf("hash for appraised value for owner %x does not value for seller %x", ownerAppraisedValueHash, buyerAppraisedValueHash)
+	}
+
+	return nil
 }
 
-// =======Rich queries =========================================================================
-// Two examples of rich queries are provided below (parameterized query and ad hoc query).
-// Rich queries pass a query string to the state database.
-// Rich queries are only supported by state database implementations
-//  that support rich query (e.g. CouchDB).
-// The query string is in the syntax of the underlying state database.
-// With rich queries there is no guarantee that the result set hasn't changed between
-//  endorsement time and commit time, aka 'phantom reads'.
-// Therefore, rich queries should not be used in update transactions, unless the
-// application handles the possibility of result set changes between endorsement and commit time.
-// Rich queries can be used for point-in-time queries against a peer.
-// ============================================================================================
+// DeleteAsset can be used by the owner of the asset to delete the asset
+func (s *SmartContract) DeleteAsset(ctx contractapi.TransactionContextInterface) error {
 
-// ===== Example: Parameterized rich query =================================================
-// queryMarblesByOwner queries for marbles based on a passed in owner.
-// This is an example of a parameterized query where the query logic is baked into the chaincode,
-// and accepting a single query parameter (owner).
-// Only available on state databases that support rich query (e.g. CouchDB)
-// =========================================================================================
-func (t *SimpleChaincode) queryMarblesByOwner(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-
-	//   0
-	// "bob"
-	if len(args) < 1 {
-		return shim.Error("Incorrect number of arguments. Expecting 1")
-	}
-
-	owner := strings.ToLower(args[0])
-
-	queryString := fmt.Sprintf("{\"selector\":{\"docType\":\"marble\",\"owner\":\"%s\"}}", owner)
-
-	queryResults, err := getQueryResultForQueryString(stub, queryString)
+	transientMap, err := ctx.GetStub().GetTransient()
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("Error getting transient: %v", err)
 	}
-	return shim.Success(queryResults)
+
+	// Asset properties are private, therefore they get passed in transient field
+	transientDeleteJSON, ok := transientMap["asset_delete"]
+	if !ok {
+		return fmt.Errorf("asset to delete not found in the transient map")
+	}
+
+	type assetDelete struct {
+		ID string `json:"assetID"`
+	}
+
+	var assetDeleteInput assetDelete
+	err = json.Unmarshal(transientDeleteJSON, &assetDeleteInput)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %v", err)
+	}
+
+	if len(assetDeleteInput.ID) == 0 {
+		return fmt.Errorf("assetID field must be a non-empty string")
+	}
+
+	// Verify that the client is submitting request to peer in their organization
+	err = verifyClientOrgMatchesPeerOrg(ctx)
+	if err != nil {
+		return fmt.Errorf("DeleteAsset cannot be performed: Error %v", err)
+	}
+
+	log.Printf("Deleting Asset: %v", assetDeleteInput.ID)
+	valAsbytes, err := ctx.GetStub().GetPrivateData(assetCollection, assetDeleteInput.ID) //get the asset from chaincode state
+	if err != nil {
+		return fmt.Errorf("failed to read asset: %v", err)
+	}
+	if valAsbytes == nil {
+		return fmt.Errorf("asset not found: %v", assetDeleteInput.ID)
+	}
+
+	ownerCollection, err := getCollectionName(ctx) // Get owners collection
+	if err != nil {
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
+	}
+
+	//check the asset is in the caller org's private collection
+	valAsbytes, err = ctx.GetStub().GetPrivateData(ownerCollection, assetDeleteInput.ID)
+	if err != nil {
+		return fmt.Errorf("failed to read asset from owner's Collection: %v", err)
+	}
+	if valAsbytes == nil {
+		return fmt.Errorf("asset not found in owner's private Collection %v: %v", ownerCollection, assetDeleteInput.ID)
+	}
+
+	// delete the asset from state
+	err = ctx.GetStub().DelPrivateData(assetCollection, assetDeleteInput.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete state: %v", err)
+	}
+
+	// Finally, delete private details of asset
+	err = ctx.GetStub().DelPrivateData(ownerCollection, assetDeleteInput.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
-// ===== Example: Ad hoc rich query ========================================================
-// queryMarbles uses a query string to perform a query for marbles.
-// Query string matching state database syntax is passed in and executed as is.
-// Supports ad hoc queries that can be defined at runtime by the client.
-// If this is not desired, follow the queryMarblesForOwner example for parameterized queries.
-// Only available on state databases that support rich query (e.g. CouchDB)
-// =========================================================================================
-func (t *SimpleChaincode) queryMarbles(stub shim.ChaincodeStubInterface, args []string) pb.Response {
+// DeleteTranferAgreement can be used by the buyer to withdraw a proposal from
+// the asset collection and from his own collection.
+func (s *SmartContract) DeleteTranferAgreement(ctx contractapi.TransactionContextInterface) error {
 
-	//   0
-	// "queryString"
-	if len(args) < 1 {
-		return shim.Error("Incorrect number of arguments. Expecting 1")
-	}
-
-	queryString := args[0]
-
-	queryResults, err := getQueryResultForQueryString(stub, queryString)
+	transientMap, err := ctx.GetStub().GetTransient()
 	if err != nil {
-		return shim.Error(err.Error())
+		return fmt.Errorf("error getting transient: %v", err)
 	}
-	return shim.Success(queryResults)
+
+	// Asset properties are private, therefore they get passed in transient field
+	transientDeleteJSON, ok := transientMap["agreement_delete"]
+	if !ok {
+		return fmt.Errorf("asset to delete not found in the transient map")
+	}
+
+	type assetDelete struct {
+		ID string `json:"assetID"`
+	}
+
+	var assetDeleteInput assetDelete
+	err = json.Unmarshal(transientDeleteJSON, &assetDeleteInput)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %v", err)
+	}
+
+	if len(assetDeleteInput.ID) == 0 {
+		return fmt.Errorf("transient input ID field must be a non-empty string")
+	}
+
+	// Verify that the client is submitting request to peer in their organization
+	err = verifyClientOrgMatchesPeerOrg(ctx)
+	if err != nil {
+		return fmt.Errorf("DeleteTranferAgreement cannot be performed: Error %v", err)
+	}
+	// Delete private details of agreement
+	orgCollection, err := getCollectionName(ctx) // Get proposers collection.
+	if err != nil {
+		return fmt.Errorf("failed to infer private collection name for the org: %v", err)
+	}
+	tranferAgreeKey, err := ctx.GetStub().CreateCompositeKey(transferAgreementObjectType, []string{assetDeleteInput.
+		ID}) // Create composite key
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	valAsbytes, err := ctx.GetStub().GetPrivateData(assetCollection, tranferAgreeKey) //get the transfer_agreement
+	if err != nil {
+		return fmt.Errorf("failed to read transfer_agreement: %v", err)
+	}
+	if valAsbytes == nil {
+		return fmt.Errorf("asset's transfer_agreement does not exist: %v", assetDeleteInput.ID)
+	}
+
+	log.Printf("Deleting TranferAgreement: %v", assetDeleteInput.ID)
+	err = ctx.GetStub().DelPrivateData(orgCollection, assetDeleteInput.ID) // Delete the asset
+	if err != nil {
+		return err
+	}
+
+	// Delete transfer agreement record
+	err = ctx.GetStub().DelPrivateData(assetCollection, tranferAgreeKey) // remove agreement from state
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
-// =========================================================================================
-// getQueryResultForQueryString executes the passed in query string.
-// Result set is built and returned as a byte array containing the JSON results.
-// =========================================================================================
-func getQueryResultForQueryString(stub shim.ChaincodeStubInterface, queryString string) ([]byte, error) {
+// getCollectionName is an internal helper function to get collection of submitting client identity.
+func getCollectionName(ctx contractapi.TransactionContextInterface) (string, error) {
 
-	fmt.Printf("- getQueryResultForQueryString queryString:\n%s\n", queryString)
-
-	resultsIterator, err := stub.GetPrivateDataQueryResult("collectionMarbles", queryString)
+	// Get the MSP ID of submitting client identity
+	clientMSPID, err := ctx.GetClientIdentity().GetMSPID()
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("failed to get verified MSPID: %v", err)
 	}
-	defer resultsIterator.Close()
 
-	// buffer is a JSON array containing QueryRecords
-	var buffer bytes.Buffer
-	buffer.WriteString("[")
+	// Create the collection name
+	orgCollection := clientMSPID + "PrivateCollection"
 
-	bArrayMemberAlreadyWritten := false
-	for resultsIterator.HasNext() {
-		queryResponse, err := resultsIterator.Next()
-		if err != nil {
-			return nil, err
-		}
-		// Add a comma before array members, suppress it for the first array member
-		if bArrayMemberAlreadyWritten == true {
-			buffer.WriteString(",")
-		}
-		buffer.WriteString("{\"Key\":")
-		buffer.WriteString("\"")
-		buffer.WriteString(queryResponse.Key)
-		buffer.WriteString("\"")
-
-		buffer.WriteString(", \"Record\":")
-		// Record is a JSON object, so we write as-is
-		buffer.WriteString(string(queryResponse.Value))
-		buffer.WriteString("}")
-		bArrayMemberAlreadyWritten = true
-	}
-	buffer.WriteString("]")
-
-	fmt.Printf("- getQueryResultForQueryString queryResult:\n%s\n", buffer.String())
-
-	return buffer.Bytes(), nil
+	return orgCollection, nil
 }
 
-// ===============================================
-// getMarbleHash - use the public data hash to verify a private marble
-// Result is the hash on the public ledger of a marble stored a private data collection
-// ===============================================
-func (t *SimpleChaincode) getMarbleHash(stub shim.ChaincodeStubInterface, args []string) pb.Response {
-	var name, collection string
-	var err error
-
-	if len(args) != 2 {
-		return shim.Error("Incorrect number of arguments. Expecting the collection and the name of the marble to query")
-	}
-
-	collection = args[0]
-	name = args[1]
-
-	// GetPrivateDataHash can use any collection deployed with the chaincode as input
-	hashAsbytes, err := stub.GetPrivateDataHash(collection, name)
+// verifyClientOrgMatchesPeerOrg is an internal function used verify client org id and matches peer org id.
+func verifyClientOrgMatchesPeerOrg(ctx contractapi.TransactionContextInterface) error {
+	clientMSPID, err := ctx.GetClientIdentity().GetMSPID()
 	if err != nil {
-		return shim.Error("Failed to get public data hash for marble:" + err.Error())
-	} else if hashAsbytes == nil {
-		return shim.Error("Marble does not exist: " + name)
+		return fmt.Errorf("failed getting the client's MSPID: %v", err)
+	}
+	peerMSPID, err := shim.GetMSPID()
+	if err != nil {
+		return fmt.Errorf("failed getting the peer's MSPID: %v", err)
 	}
 
-	return shim.Success(hashAsbytes)
+	if clientMSPID != peerMSPID {
+		return fmt.Errorf("client from org %v is not authorized to read or write private data from an org %v peer", clientMSPID, peerMSPID)
+	}
+
+	return nil
+}
+
+func submittingClientIdentity(ctx contractapi.TransactionContextInterface) (string, error) {
+	b64ID, err := ctx.GetClientIdentity().GetID()
+	if err != nil {
+		return "", fmt.Errorf("Failed to read clientID: %v", err)
+	}
+	decodeID, err := base64.StdEncoding.DecodeString(b64ID)
+	if err != nil {
+		return "", fmt.Errorf("failed to base64 decode clientID: %v", err)
+	}
+	return string(decodeID), nil
 }
