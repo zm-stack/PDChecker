@@ -24,7 +24,7 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 	for _, node := range file.AST.Decls {
 		switch node.(type) {
 		case *ast.FuncDecl:
-			var getPrivateCalled, updateCalled bool
+			var getPrivateCalled, updateCalled, putPrivateCalled bool
 			taintVars := make(map[string]struct{})
 
 			ast.Inspect(node, func(n ast.Node) bool {
@@ -32,11 +32,6 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 					if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
 						if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
 							// 污点标记
-							if strings.Compare(selectorExpr.Sel.Name, "PutPrivateData") == 0 {
-								if ident, ok := callExpr.Args[2].(*ast.Ident); ok {
-									taintVars[ident.Name] = struct{}{}
-								}
-							}
 							for _, fname := range privateQuerys {
 								if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
 									getPrivateCalled = true
@@ -45,9 +40,20 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 									}
 								}
 							}
-							for _, fname := range updateOp {
-								if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
-									updateCalled = true
+
+						}
+					}
+				} else if callExpr, ok := n.(*ast.CallExpr); ok {
+					if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+						for _, fname := range updateOp {
+							if strings.Compare(selectorExpr.Sel.Name, fname) == 0 {
+								updateCalled = true
+								if strings.Compare(selectorExpr.Sel.Name, "PutPrivateData") == 0 {
+									getPrivateCalled = true
+									putPrivateCalled = true
+									if ident, ok := callExpr.Args[2].(*ast.Ident); ok {
+										taintVars[ident.Name] = struct{}{}
+									}
 								}
 							}
 						}
@@ -55,6 +61,26 @@ func (i *RetPrivacyLeakageRule) Apply(file *lint.File, _ lint.Arguments) []lint.
 				}
 				return true
 			})
+			if putPrivateCalled {
+				ast.Inspect(node, func(n ast.Node) bool {
+					if Assign, ok := n.(*ast.AssignStmt); ok {
+						if callExpr, ok := Assign.Rhs[0].(*ast.CallExpr); ok {
+							if selectorExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+								if strings.Compare(selectorExpr.Sel.Name, "Marshal") == 0 {
+									if ident, ok := Assign.Lhs[0].(*ast.Ident); ok {
+										if _, ok := taintVars[ident.Name]; ok {
+											if ident, ok := callExpr.Args[0].(*ast.Ident); ok {
+												taintVars[ident.Name] = struct{}{}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					return true
+				})
+			}
 			// 污点传播
 			if getPrivateCalled && updateCalled {
 				ast.Inspect(node, func(n ast.Node) bool {
